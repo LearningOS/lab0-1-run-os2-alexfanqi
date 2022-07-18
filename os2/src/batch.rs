@@ -1,6 +1,7 @@
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use lazy_static::*;
+use core::ops::Range;
 
 const USER_STACK_SIZE: usize = 4096;
 const KERNEL_STACK_SIZE: usize = 4096 * 2;
@@ -138,4 +139,49 @@ pub fn run_next_app() -> ! {
         )) as *const _ as usize);
     }
     panic!("Unreachable in batch::run_current_app!");
+}
+
+pub fn get_current_app() -> usize {
+    APP_MANAGER.exclusive_access().get_current_app()
+}
+
+fn validate_app_addr_access(app_id: usize, address: usize) -> bool {
+    let app_manager = APP_MANAGER.exclusive_access();
+    
+    assert!(app_id <= app_manager.num_app && app_id != 0, "Application with ID {} does not exist", app_id );
+
+    let addr_start = APP_BASE_ADDRESS;
+    let addr_end = addr_start + APP_SIZE_LIMIT;
+    if address >= addr_start && address < addr_end {
+        true
+    } else {
+        false
+    }
+}
+
+pub fn validate_app_addr_range_access(app_id: usize, range: Range<usize>) {
+    let ret = validate_app_addr_access(app_id, range.start) && 
+        validate_app_addr_access(app_id, range.end-1);
+    assert!(ret, "Invalid access to memory region [{}-{}] from app with ID {}",
+        range.start, range.end, app_id
+    );
+}
+
+// find the app whose address range includes the address of argument 
+#[allow(dead_code)]
+pub fn map_address_to_app_id(address: usize) -> Option<usize> {
+    let app_manager = APP_MANAGER.exclusive_access();
+
+    let mut res = None;
+
+    for (id, app_end) in app_manager.app_start.iter().enumerate() {
+        if address < *app_end {
+            return res;
+        }
+        else {
+            res = Some(id+1);
+        }
+    }
+    
+    return None;
 }
